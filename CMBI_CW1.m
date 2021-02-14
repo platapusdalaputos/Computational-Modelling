@@ -199,7 +199,7 @@ f  = parameter_hat(3);
 theta = parameter_hat(4);
 phi = parameter_hat(5);
 
-parameter_hat = [ S0^2 d^2 atan(f)/(pi+0.5) theta phi];
+parameter_hat = [ S0^2 d^2 f theta phi];
 
 
 pd_positive = BallStick_noAvox(parameter_hat, bvals, qhat);
@@ -361,67 +361,140 @@ for i = 1:145
 end
 
 S0_map72_sq = S0_map72.^2;
-f_map72_sq = 1/(1+(-1.*(f_map72)));
+f_map72_sq = Siggy(f_map72);
 d_map72_sq = d_map72.^2;
 
+%%
 
 
-
-% figure(5);
-% subplot(2,3,1)
-% imshow(flipud(squeeze(S0_map72(:,:,:))'), []);
-% subplot(2,3,2)
-% imshow(flipud(squeeze(f_map72(:,:,:))'), []);
-% subplot(2,3,3)
-% imshow(flipud(squeeze(d_map72(:,:,:))'), []);
-% subplot(2,3,4)
-% imshow(flipud(squeeze(theta_map72(:,:,:))'), []);
-% subplot(2,3,5)
-% imshow(flipud(squeeze(phi_map72(:,:,:))'), []);
+figure(5);
+subplot(2,3,1)
+imshow(flipud(squeeze(S0_map72_sq(:,:,:))'),[0 10000]);
+subplot(2,3,2)
+imshow(flipud(squeeze((f_map72_sq(:,:,:)))'), [0.4 0.7]);
+subplot(2,3,3)
+imshow(flipud(squeeze((d_map72_sq(:,:,:)))'), [0 1]);
+subplot(2,3,4)
+imshow(flipud(squeeze(theta_map72(:,:,:))'), []);
+subplot(2,3,5)
+imshow(flipud(squeeze(phi_map72(:,:,:))'), []);
 
 
 %% Q1.2.1 Non - parametric modelling
 
-
-% Non - parametric booting
-% Bootstrap method requires sampling the input randomly 
-orig_data = Avox';
-num_bs_iterations = 100;
-N = 108;
-
-bootstrap_sample = zeros(num_bs_iterations, N);
-s0_boot = zeros(1, num_bs_iterations);
-d_boot = zeros(1, num_bs_iterations);
-f_boot = zeros(1, num_bs_iterations);
-
-cols = size(orig_data,2);
-resnorm_q2 = zeros(1,num_bs_iterations);
-
-for i = 1:num_bs_iterations
-    
-    P = randperm(cols);
-    
-    bootstrap_sample(i,:) = orig_data(:,P);
-    
-    [parameter_hat,RESNORM_boot,EXITFLAG,OUTPUT]=fminunc('BallStickSSD_Positive',startx,h,bootstrap_sample(i,:),bvals,qhat);
-
-    resnorm_q2(:,i) = RESNORM_boot;
-    s0_boot(:,i) = parameter_hat(1);
-    d_boot(:,i) = parameter_hat(2);
-    f_boot(:,i) = parameter_hat(3);
-    
-    
-end 
-
-%% Q1.2.1 Parametric Bootstrapping
-
-
-% Use the value sigma (and try sigma^2 too to find the
-[sumResSquared, S] = BallStickSSD_Positive(parameter_hat,Avox, bvals, qhat);
 K = 108 ;% Number of measurements
 N = 5 ;% Number of Parameters
 
-sigma = sqrt((1/(K-N))*sumResSquared);
+sigma = sqrt((1/(K-N))*sum((Avox-pd').^2));
+% Non - parametric booting
+% Bootstrap method requires sampling the input randomly 
+%%
+% orig_data = Avox';
+
+num_bs_iterations = 100;
+
+K = 108;
+
+bootstrap_sample = zeros(num_bs_iterations, K);
+
+s0_boot = zeros(1, num_bs_iterations);
+
+d_boot = zeros(1, num_bs_iterations);
+
+f_boot = zeros(1, num_bs_iterations);
+
+A_iter = zeros(1, num_bs_iterations);
+
+resnorm_q2 = zeros(1,num_bs_iterations);
+
+resnorm_q2_keep = zeros(1,num_bs_iterations);
+
+index_min = zeros(1,num_bs_iterations);
+
+param_hat_best = zeros(1,5,num_bs_iterations);
+
+j=0;
+k=0;
+
+for i = 2:num_bs_iterations
+    k=k+1;
+    
+    bootstrap_sample(i,:) = Avox + normrnd(Avox, sigma);
+    
+    
+    [parameter_hat,RESNORM_boot,EXITFLAG,OUTPUT]=fminunc('BallStickSSD_Positive',startx,h,bootstrap_sample(i,:),bvals,qhat);
+
+    
+    resnorm_q2(:,1)= RESNORM_boot;
+   
+    
+    resnorm_q2(:,i)= RESNORM_boot;
+    
+    
+    if resnorm_q2(:,i)<=min(resnorm_q2(i-k:i))
+        
+        j=j+1;
+        
+        resnorm_q2_keep(:,i) = resnorm_q2(:,i);
+        index = find(resnorm_q2_keep);
+        
+        param_hat_best(:,:,j) = parameter_hat;
+        s0_boot(:,j) = param_hat_best(1,1,j).^2;
+        d_boot(:,j) = param_hat_best(1,2,j).^2;
+        f_boot(:,j) = Siggy(param_hat_best(1,3,j));
+        
+    else
+        
+        continue
+        
+    end
+    
+end   
+
+
+%%
+
+param_best = zeros(1,length(index));
+
+
+for i = 1:length(index)
+    
+    param_best(1,i) = parameter_hat(1,(index(1,i)));
+        
+    
+end
+
+    
+%     if mod(i,10)==0 
+%                 
+%         j=j+1;
+%                 
+%         [A_iter(1,j), index_min(1,j)]= min(resnorm_q2(i-9:i));
+%     
+%     else
+%         continue
+%     end 
+%     
+% end 
+
+
+
+%%
+
+best_values_boots = zeros(1,500);
+best_values_S0 = zeros(1,500);
+best_values_d = zeros(1,500);
+best_values_f = zeros(1,500);
+
+for i = 1:499
+    for j = 1:10
+        best_values_boots(1,i) = min(resnorm_q2(:,i*j+j));
+        best_values_S0(1,i) = min(s0_boot(:,i*j+j));
+        best_values_d(1,i) = min(d_boot(:,i*j+j));
+        best_values_f(1,i) = min(f_boot(:,i*j+j));
+    end 
+    
+end
 
 
 %% 2_Sigma Value for Parameters
@@ -450,21 +523,24 @@ histogram(s0_boot);
 % f
 
 %% Q1.2 Plot
-figure(5);
+figure(7);
 subplot(2,2,1)
-histogram(resnorm_q2,10);
-subplot(2,2,2)
+histogram(s0_boot,10);
 
-% histogram(s0_boot);
-% subplot(2,2,3)
-% 
-% histogram(f_boot);
+subplot(2,2,2)
+histogram(d_boot, 10);
+
+
+subplot(2,2,3)
+histogram(f_boot,10 );
+
 % subplot(2,2,4)
-% 
-% histogram(d_boot);
+% histogram(best_values_f,100);
 
 %% Q1.2.2
 
+figure(8);
+histogram(f_boot,100);
 
 
 
@@ -476,4 +552,33 @@ subplot(2,2,2)
 
 
 %% Q1.3.2
+%                     break 
+                
 
+
+        %    if resnorm_q2(:,i)<=min(resnorm_q2)
+        %        
+        %        resnorm_q2_keep(:,i) = resnorm_q2(:,i);       
+        %        s0_boot(:,i) = parameter_hat(1).^2;
+        %        d_boot(:,i) = parameter_hat(2).^2;
+        %        f_boot(:,i) = Siggy(parameter_hat(3));
+        %        
+        %    else
+        %        continue
+        %    end
+
+%             end
+
+
+% resnorm_q2_keep = zeros(1,num_bs_iterations);
+
+% optimoptions(@fminunc, 'MaxIterations', 10000, 'MaxFunctionEvaluations', 50000, 'Display', 'Iter', 'FiniteDifferenceStepSize', 1e-3);
+% 
+% ref = Avox + normrnd(Avox, sigma);
+% 
+% J = ref';
+% 
+% [parameter_hat,RESNORM_pre_boot,EXITFLAG,OUTPUT]=fminunc('BallStickSSD_Positive',startx,h,J,bvals,qhat);
+
+% counter_q21 = zeros(1, num_bs_iterations);
+% cols = size(orig_data,2);
